@@ -54,6 +54,8 @@ Example session:
 Guess the number
 50
 Too small!
+hello
+Please input a number!
 75
 Too big!
 63
@@ -144,7 +146,13 @@ fn main() {
         let mut guess: String = String::new();
         io::stdin().read_line(&mut guess).expect("code run failed");
 
-        let guess: u32 = guess.trim().parse().expect("code run failed");
+        let guess: u32 = match guess.trim().parse() {
+            Ok(num) => num,
+            Err(_) => {
+                println!("Please input a number!");
+                continue;
+            }
+        };
 
         // println!("You guessed {guess}");
 
@@ -195,7 +203,7 @@ rand = "0.10.3"
 **Line 2: `use std::cmp::Ordering;`**
 
 - Imports the `Ordering` enum (`Less`, `Greater`, `Equal`) from standard library.
-- Why: used in `match` on lines 20–22 to compare guess vs secret.
+- Why: used in `match` on lines 26–31 to compare guess vs secret.
 - How: `std` needs no `Cargo.toml` entry. Alternative without import: write `std::cmp::Ordering::Less` fully.
 
 **Line 3: `use std::io;`**
@@ -221,7 +229,7 @@ rand = "0.10.3"
 
 - `rand::rng()`: creates a thread-local random number generator (seeded by OS).
 - `.random_range(1..101)`: trait method from `RngExt`; picks random integer in range `1..101` = 1 to 100 inclusive of 1, exclusive of 101.
-- `let secret_number`: immutable binding; stores the number to guess. Type inferred as `i32` (later compared against `u32`, Rust unifies to one integer type here).
+- `let secret_number`: immutable binding; stores the number to guess. Type inferred as `u32` because it is later compared with `guess: u32` via `guess.cmp(&secret_number)`.
 - This runs once, before the loop, so the secret stays constant.
 
 **Line 8: `// println!("The secret number is: {}", secret_number);`**
@@ -234,7 +242,7 @@ rand = "0.10.3"
 
 **Line 11: `loop {`**
 
-- Infinite loop. Repeats guessing until explicit `break` on line 24. Needed because user may need multiple tries.
+- Infinite loop. Repeats guessing until explicit `break` on line 30. Needed because user may need multiple tries.
 
 **Line 12: `let mut guess: String = String::new();`**
 
@@ -251,32 +259,37 @@ rand = "0.10.3"
 - Returns `Result<usize>` (`Ok(bytes_read)` or `Err(error)`).
 - `.expect("code run failed")`: if `Err`, crash with that message; if `Ok`, continue. Simple error handling for beginners.
 
-**Line 15: `let guess: u32 = guess.trim().parse().expect("code run failed");`**
+**Lines 15–21: `let guess: u32 = match guess.trim().parse() { ... };`**
 
 - This is *shadowing*: reuses name `guess` but with new type `u32` (unsigned 32-bit int 0..4,294,967,295). Old `String` is shadowed.
 - `guess.trim()`: removes whitespace/newline (`"42\n"` → `"42"`). `read_line` includes Enter key as `\n`/`\r\n`, must trim.
-- `.parse()`: converts `&str` to a number. Type inferred from annotation `u32`. Returns `Result<u32, _>`.
-- `.expect(...)`: crash if input is not a number (e.g. `abc`). Note: production code would use `match` + `continue` instead of crashing.
+- `.parse()`: converts `&str` to a number. Type inferred from `Ok(num)` → `u32` binding and the later `guess.cmp(&secret_number)` comparison. Returns `Result<u32, _>` (`Ok(number)` on success, `Err(error)` on failure).
+- `match ... { Ok(num) => num, Err(_) => { ... } }`: handles both cases instead of crashing:
+  - `Ok(num) => num`: if parse succeeded, unwrap and store the number in new `guess`.
+  - `Err(_) =>`: if parse failed (e.g. user typed `hello` or empty line), `_` means “ignore the exact error”. Inside the block:
+    - `println!("Please input a number!");` warns the user.
+    - `continue;` skips the rest of the loop iteration (skips the `cmp`/`match` below) and jumps to the next `loop` round to ask again.
+- **Why this is better than `.expect(...)`:** old code `guess.trim().parse().expect(...)` crashed the whole program on bad input. This version keeps the game alive.
 
-**Line 17: `// println!("You guessed {guess}");`**
+**Line 23: `// println!("You guessed {guess}");`**
 
 - Commented-out echo. Would confirm what was parsed. `{guess}` = inline variable interpolation (Rust 2021+).
 
-**Line 19: `match guess.cmp(&secret_number) {`**
+**Line 25: `match guess.cmp(&secret_number) {`**
 
 - `guess.cmp(&secret_number)`: compares two numbers, returns `Ordering` enum.
 - `&secret_number`: passes by reference (borrow) as `cmp` expects `&Self`.
 - `match`: exhaustive pattern matching — must handle all three `Ordering` cases below.
 
-**Line 20: `Ordering::Less => println!("Too small!"),`**
+**Line 26: `Ordering::Less => println!("Too small!"),`**
 
 - Arm 1: if `guess < secret`, print hint. `=>` separates pattern from code. Trailing `,` ends arm.
 
-**Line 21: `Ordering::Greater => println!("Too big!"),`**
+**Line 27: `Ordering::Greater => println!("Too big!"),`**
 
 - Arm 2: if `guess > secret`, print hint.
 
-**Line 22–25:**
+**Lines 28–31:**
 
 ```rust
 Ordering::Equal => {
@@ -287,15 +300,15 @@ Ordering::Equal => {
 
 - Arm 3: if equal, print win message and `break` out of `loop`, ending the program. Braces `{}` needed because arm has two statements.
 
-**Line 26: `}`**
+**Line 32: `}`**
 
 - Closes `match`.
 
-**Line 27: `}`**
+**Line 33: `}`**
 
 - Closes `loop`.
 
-**Line 28: `}`**
+**Line 34: `}`**
 
 - Closes `fn main`.
 
@@ -307,19 +320,14 @@ Ordering::Equal => {
    ```rust
    println!("Please input your guess:");
    ```
-2. Don’t crash on bad input — replace line 15 with:
-   ```rust
-   let guess: u32 = match guess.trim().parse() {
-       Ok(num) => num,
-       Err(_) => {
-           println!("Please enter a number!");
-           continue;
-       }
-   };
-   ```
-3. Limit range message:
+2. ✅ Already done in this version: bad input no longer crashes. Old code was `guess.trim().parse().expect(...)` which crashed on `abc`. New code uses `match + continue` to print `Please input a number!` and ask again.
+3. Limit range message — change line 6 to:
    ```rust
    println!("Guess a number between 1 and 100");
+   ```
+4. Count attempts — add `let mut tries = 0;` before `loop`, add `tries += 1;` inside `loop`, and print it on win:
+   ```rust
+   println!("You win in {tries} tries!");
    ```
 
 ---
